@@ -1,0 +1,316 @@
+// Data type for interrupt handler
+// Todo: dev_id & handler type? void*?
+typedef struct irq_handler_node{
+    uint32_t irq_num;
+    uint32_t flags;
+    uint8_t dev_name[10];
+    void *dev_id;
+    void *handler;
+    irq_handler_node* next;
+} irq_handler_t
+
+irq_handler_t* irq_handlers[16];
+
+// Initialize stuff
+// Initialze an array of interrupt handlers for chaining
+for(i=0; i<16; i++){
+    irq_handlers[i] = NULL;
+}
+
+//----------------------------------------------------------------------
+
+//The following two assembly function might not be correct
+#define get_args(index, args)           \
+do{                                  \
+    asm volatile("movl %%eax, %0"   \
+    : "=S"(index));                  \
+    // Todo: Args NOT DONE!!!
+} while(0)
+
+#define ret_syscall(ret_val)         \
+do{                                  \
+    asm volatile("movl %0,  %%eax"   \
+    : "=S"(ret_val));                \
+} while(0)
+//The above two assembly function might not be correct
+
+
+// System call temp handler
+void syscall_handle(){
+    int32_t index;
+    int32_t args[3];
+    int32_t ret_val = -1;
+    get_args(index, args);
+    switch (index) {
+        case SYS_HALT:
+            // ret_val = func_call()
+        case SYS_EXECUTE:
+        case SYS_READ:
+        case SYS_WRITE:
+        case SYS_OPEN:
+        case SYS_CLOSE:
+        case SYS_GETARGS:
+        case SYS_VIDMAP:
+        case SYS_SET_HANDLER:
+        case SYS_SIGRETURN:
+        case default:
+            break;
+    }
+    ret_syscall(ret_val);
+    return;
+}
+
+----------------------------------------------------------------------
+void return_int() {
+	asm volatile("		\
+		leave		  \n\
+	  	iret"
+	  	:
+	  	:
+		: "memory");
+};
+
+// Function to save register values
+void save_registers() {
+	asm volatile("pushal"
+		:
+		:
+		:"memory");
+};
+
+
+// Function to restore register values
+void restore_registers() {
+	asm volatile("popal"
+		:
+		:
+		:"memory");
+};
+
+------------------------------------------------------------------------------
+var baseCodes = []string{
+  "Error",
+  "Esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Backspace",
+  "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]",
+  "Enter",
+  "LCtrl",
+  "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'",
+  "`",
+  "LShift", "\\",
+  "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "RShift",
+  "Keypad_*",
+  "LAlt", "Space",
+  "CapsLock",
+  "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10",
+  "NumLock", "ScrollLock",
+  "Keypad_7", "Keypad_8", "Keypad_9",
+  "Keypad_-",
+  "Keypad_4", "Keypad_5", "Keypad_6", "Keypad_Plus",
+  "Keypad_1", "Keypad_2", "Keypad_3",
+  "Keypad_0", "Keypad-.",
+  "Alt_SysRq",
+}
+---------------------------------------------------------------------------------
+void inline push_stack_iret(PCB_t* pcb_ptr, uint32_t entry_point, uint32_t stack_bottom, uint16_t DS, uint16_t CS){
+
+    asm __volatile__ ("  \
+            cli; \
+            movl %%esp, %0; \
+            movl %%ebp, %1; \
+            xorl %%eax, %%eax;\
+            movw %2, %%ax; \
+            movw %%ax, %%ds; \
+            movw %%ax, %%es; \
+            movw %%ax, %%fs; \
+            movw %%ax, %%gs; \
+            \
+            pushl %%eax;\
+            \
+            movl %5, %%eax;\
+            pushl %%eax; \
+      \
+            pushfl; \
+      popl %%eax;\
+      orl $0x200, %%eax ; \
+      pushl %%eax;\
+            \
+            xorl %%eax, %%eax;\
+            movw %3, %%ax;\
+            pushl %%eax; \
+            \
+            movl %4, %%eax  ;\
+            pushl %%eax; \
+            iret; \
+            RETURN_HERE:"
+            : "=r"(pcb_ptr->ESP), "=r"(pcb_ptr->EBP)
+            : "r" (DS), "r" (CS), "r" (entry_point), "r"(stack_bottom)
+            : "eax");
+}
+--------------------------------------------------------------------------------
+int32_t halt_func(uint8_t status)
+{
+  // current PCB pointer
+  if(curr_pcb_ptr->parent == NULL)
+    return 0;
+  tss.esp0 = curr_pcb_ptr->ESP0;
+
+  uint32_t ESP_save = curr_pcb_ptr->ESP, EBP_save = curr_pcb_ptr->EBP;
+  PCB_t * pcb_ptr = curr_pcb_ptr;
+  get_parent_PCB(pcb_ptr);   // replacing pcb_pointer with its parent pointer to halt the process
+                 // restore esp and ebp
+  curr_pcb_ptr->child = NULL;
+
+  cli();
+  asm __volatile__("movl  %0, %%esp"  : :"r" (ESP_save));    // check
+  asm __volatile__("movl  %0, %%ebp"  : :"r" (EBP_save));   // check
+  sti();
+
+  asm volatile(" jmp RETURN_HERE");
+  return 0;
+}
+-------------------------------------------------------------------------------
+void terminal_putc(char c){
+
+    uint32_t flags;
+    cli_and_save(flags);
+
+    // Line buffer all filled do nothing.
+    if (curr_idx[curr_term] >= LINE_BUFFER_SIZE &&
+        !(c==Backspace_ASCII && curr_idx[curr_term] == (LINE_BUFFER_SIZE))){
+        return;
+    }
+
+    if (c == '\n' || c == '\r') {
+
+        if (TERM_WRITE_FLAG[curr_term]){
+            uint32_t i;
+            // Append the line feed at the end. Unix style.
+            input_buffer[curr_term][CURR_LINE][curr_idx[curr_term]] = '\n';
+
+            // Copy the contents into ENTERED_LINE buffer to return.
+            for (i=0; i < LINE_BUFFER_SIZE; i++){
+                input_buffer[curr_term][ENTERED_LINE][i] = (i <= curr_idx[curr_term]) ? input_buffer[curr_term][CURR_LINE][i] : '\0';
+                input_buffer[curr_term][CURR_LINE][i] = '\0';
+            }
+
+            // Update X & Y.
+            term_X[curr_term] = 0;
+            term_Y[curr_term]++;
+            if (term_Y[curr_term] >= NUM_ROWS){        // Update Y and scroll the screen down
+                terminal_scroll_down();
+                term_Y[curr_term] = NUM_ROWS - 1;
+            }
+
+            curr_idx[curr_term] = 0;
+        }
+        else if(TERM_READ_FLAG[disp_term] /*|| TERM_WRITE_FLAG[disp_term]*/)
+        {
+
+            // Update flags and cursor
+            terminal_update_cursor();
+
+            ENTER_FLAG[disp_term] = 1;
+        }
+    } else if (c == Backspace_ASCII) {      // Backspace
+        // Only valid when there are contents in the buffer.
+        if (TERM_READ_FLAG[curr_term]){
+            if (curr_idx[curr_term] > 0 && (term_X[curr_term]+term_Y[curr_term]*NUM_COLS)>(term_X_start[curr_term]+term_Y_start[curr_term]*NUM_COLS)){
+                update_coords_back(term_X[curr_term], term_Y[curr_term]);
+                terminal_update_cursor();
+                uint32_t temp_idx, temp_end = (term_X_end[curr_term] + term_Y_end[curr_term]*NUM_COLS), next;
+                for (temp_idx = (term_X[curr_term] + term_Y[curr_term]*NUM_COLS), next = temp_idx - (term_X_start[curr_term]+term_Y_start[curr_term]*NUM_COLS) + 1; temp_idx <= temp_end; temp_idx++){
+                    // Erase the previous character.
+                    uint32_t curr = (next - 1);
+                    uint8_t temp_char;
+
+                    if (next >= curr_idx[curr_term])
+                        temp_char = ' ';
+                    else
+                        temp_char = input_buffer[curr_term][CURR_LINE][next];
+
+                    input_buffer[curr_term][CURR_LINE][curr] = temp_char;
+                    *(uint8_t *)(term_vid_mem + (temp_idx << 1)) = temp_char;
+                    *(uint8_t *)(term_vid_mem + (temp_idx << 1) + 1) = ATTRIB;
+                    next++;
+                }
+                curr_idx[curr_term]--;
+                update_coords_back(term_X_end[curr_term], term_Y_end[curr_term]);
+                input_buffer[curr_term][CURR_LINE][curr_idx[curr_term]] = '\0';
+            }
+        }else if(TERM_WRITE_FLAG[curr_term]){
+            if (curr_idx[curr_term] > 0){
+                // Todo: multiline input. Need to wrap to next line but keep the buffer.
+                // Update X & Y
+                update_coords_back(term_X[curr_term], term_Y[curr_term]);
+
+                // Erase the previous character.
+                *(uint8_t *)(term_vid_mem + ((NUM_COLS*term_Y[curr_term] + term_X[curr_term]) << 1)) = ' ';
+                *(uint8_t *)(term_vid_mem + ((NUM_COLS*term_Y[curr_term] + term_X[curr_term]) << 1) + 1) = ATTRIB;
+
+                // Update the buffer and cursor
+                curr_idx[curr_term]--;
+                input_buffer[curr_term][CURR_LINE][curr_idx[curr_term]] = '\0';
+                terminal_update_cursor();
+            }
+        }
+    } else {
+        if (TERM_READ_FLAG[curr_term]){
+            update_coords_forward(term_X_end[curr_term], term_Y_end[curr_term]);
+            if (term_Y_end[curr_term] >= NUM_ROWS){
+                terminal_scroll_down();
+                term_Y_end[curr_term] = NUM_ROWS - 1;
+                term_Y_start[curr_term]--;
+                term_Y[curr_term]--;
+            }
+
+            int32_t temp_idx, temp_end = (term_X[curr_term] + term_Y[curr_term]*NUM_COLS), curr;
+            for (temp_idx = (term_X_end[curr_term]+term_Y_end[curr_term]*NUM_COLS), curr = temp_idx - (term_X_start[curr_term]+term_Y_start[curr_term]*NUM_COLS); temp_idx>=temp_end; temp_idx--){
+                int32_t prev = curr - 1;
+                uint8_t temp_char;
+
+                if (temp_idx == temp_end)
+                    temp_char = (uint8_t)c;
+                else
+                    temp_char = input_buffer[curr_term][CURR_LINE][prev];
+                input_buffer[curr_term][CURR_LINE][curr] = temp_char;
+                // Show the character in display
+                *(uint8_t *)(term_vid_mem + (temp_idx << 1)) = temp_char;
+                *(uint8_t *)(term_vid_mem + (temp_idx << 1) + 1) = ATTRIB;
+
+                curr--;
+            }
+
+            //Update the coordinates in terminal
+            update_coords_forward(term_X[curr_term], term_Y[curr_term]);
+            if (term_Y[curr_term] >= NUM_ROWS){
+                term_Y[curr_term] = NUM_ROWS - 1;
+            }
+            // Update curr_idx[curr_term] and cursor
+            terminal_update_cursor();
+
+            curr_idx[curr_term]++;
+            // ENTER_FLAG[curr_term] = (curr_idx[curr_term] >= LINE_BUFFER_SIZE) ? 1 : 0;
+            // ENTER_FLAG[curr_term] = 0;
+        }else if(TERM_WRITE_FLAG[curr_term]){
+            Show the character in display
+            *(uint8_t *)(term_vid_mem + ((NUM_COLS*term_Y[curr_term] + term_X[curr_term]) << 1)) = c;
+            *(uint8_t *)(term_vid_mem + ((NUM_COLS*term_Y[curr_term] + term_X[curr_term]) << 1) + 1) = ATTRIB;
+
+            //Update the coordinates in terminal
+            update_coords_forward(term_X[curr_term], term_Y[curr_term]);
+            if (term_Y[curr_term] >= NUM_ROWS){
+                terminal_scroll_down();
+                term_Y[curr_term] = NUM_ROWS - 1;
+            }
+
+            // Update curr_idx[curr_term] and cursor
+            terminal_update_cursor();
+            input_buffer[curr_term][CURR_LINE][curr_idx[curr_term]] = c;
+            curr_idx[curr_term]++;
+        }
+    }
+
+    char_from_KB = 0;
+    sti();
+    restore_flags(flags);
+}

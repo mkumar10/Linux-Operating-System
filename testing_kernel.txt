@@ -1,0 +1,38 @@
+	//-----------------------------------------------------------
+	// File System Testing
+	// print_file_names();
+
+	// print_file_size();
+
+	// uint32_t offset=0;
+	// uint32_t length;
+	// char * filename = "cat";
+	// dentry_t Mydentry;
+	// read_dentry_by_name((uint8_t*)filename, &Mydentry);
+	// length = get_file_size(&Mydentry);	// Specify own length
+	// print_file(filename, offset, length);
+	// print_file_size();
+	// -----------------------------------------------------------
+	// RTC Testing
+	// uint32_t freq = 65;
+	// rtc_write(0, &freq, 4);
+	// while(1)
+	// {
+	// 	terminal_printf("RTC Read Called\n");
+	// 	rtc_read(0, 0, 0);
+	// 	terminal_printf("RTC Interrupt Broke Me\n");
+	// }
+	//-----------------------------------------------------------
+	// terminal testing
+	// char string[200];
+	// terminal_printf("%d\n", terminal_read(0, &string[0], 10));
+	// terminal_printf("%s\n", string);
+	// uint32_t temp = terminal_write(0, &string[0], 7);
+	// terminal_printf("\n%d\n", temp);
+	// for (temp = 0; temp<200; temp++){
+	// 	string[temp] = temp<100? '0':'\0';
+	// }
+	// temp = 0;
+	// temp = terminal_write(0, &string[0], 200);
+	// terminal_printf("%d\n", temp);
+	//-----------------------------------------------------------
